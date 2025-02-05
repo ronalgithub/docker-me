@@ -1,0 +1,98 @@
+version: '3.0'
+# Services
+services:
+  # PHP FPM Service
+  php-fpm:
+    container_name: php-fpm-lms
+    build:
+      dockerfile: php-fpm-dockerfile
+      context: .
+    volumes:
+      - moodleapp:/var/www/moodle
+      - moodledata:/var/www/moodledata
+      - './php-logging.conf:/usr/local/etc/php-fpm.d/zz-log.conf'
+      - './php.ini:/usr/local/etc/php/php.ini'
+    restart: always
+    environment:
+      REDIS_HOST_PASSWORD: '${REDIS_PASS}'
+    depends_on:
+      - mariadb
+    links:
+      - mariadb
+      - redis
+    networks:
+      - backend
+
+  # Nginx Service
+  nginx:
+    container_name: web-lms
+    image: nginx:latest
+    environment:
+      TZ: '${LOCAL_TIMEZONE}'
+    ports:
+      - 9080:80
+    links:
+      - php-fpm
+    volumes:
+      - moodleapp:/var/www/moodle
+      - moodledata:/var/www/moodledata
+      - './nginx-conf:/etc/nginx/conf.d'
+      - './nginx.conf:/etc/nginx/nginx.conf'
+    restart: always
+    depends_on:
+      - php-fpm
+    networks:
+      - proxy-manager_default
+      - frontend
+      - backend
+    # command: >
+    #   sh -c "chown -R www-data:www-data /var/www/moodle"
+
+  # MariaDB Service
+  # jika tidak bis amasuk mysql -u moodle_user, restart service di dalam container service mariadb restart
+  mariadb:
+    container_name: db-lms
+    image: mariadb:10.9
+    environment:
+      MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD}'
+      MYSQL_DATABASE: '${DB_NAME}'
+      MYSQL_USER: '${DB_USER}'
+      MYSQL_PASSWORD: '${DB_PASSWORD}'
+      TZ: '${LOCAL_TIMEZONE}'
+    restart: unless-stopped
+    volumes:
+      - db-data-lms:/var/lib/mysql
+    ports:
+      - 9306:3306
+    networks:
+      - backend
+
+  redis:
+    image: redis:latest
+    container_name: redis-lms
+    networks:
+        - backend
+    volumes:
+        - redis-data-lms:/data
+    sysctls:
+        - net.core.somaxconn=512
+    restart: always
+    ports:
+        - '9379:6379'
+    environment:
+        TZ: '${LOCAL_TIMEZONE}'
+    command: redis-server --requirepass $REDIS_PASS
+
+# Volumes
+volumes:
+  db-data-lms: {}
+  moodledata: {}
+  moodleapp: {}
+  redis-data-lms: {}
+
+# Networks
+networks:
+    backend: null
+    frontend: null
+    proxy-manager_default:
+      external: true
